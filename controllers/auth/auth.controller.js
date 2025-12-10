@@ -153,6 +153,8 @@ export const refreshToken = async (req, res, next) => {
         // 1️⃣ Get refresh token from Cookie (Web)
         const cookieToken = req.cookies?.jwt;
 
+        console.log(cookieToken, "COOKIE TOKEN");
+
         // 3️⃣  from JSON Body (Mobile)
         const bodyToken = req.body?.refreshToken;
 
@@ -186,7 +188,7 @@ export const refreshToken = async (req, res, next) => {
                         },
                     },
                     process.env.JWT_Access_Token,
-                    { expiresIn: "15m" } // recommended
+                    { expiresIn: "1m" } // recommended
                 );
 
                 // 7️⃣ Return access token (same for Web + Mobile)

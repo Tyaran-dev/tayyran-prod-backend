@@ -18,7 +18,7 @@ import cookieParser from "cookie-parser";
 const app = express();
 dotenv.config();
 const allowedOrigins = [
-  'http://localhost:3000',  // development
+  'http://localhost:4025',  // development
   'https://tayyran.com'     // production
 ];
 
