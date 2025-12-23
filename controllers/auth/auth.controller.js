@@ -13,10 +13,6 @@ const generateVerificationCode = () => {
     return { verificationCode, hashedVerifyCode };
 };
 
-
-
-
-
 export const register = async (req, res, next) => {
     const { first_name, last_name, email, password } = req.body;
     const verificationTimeMinutes = 10;
@@ -154,12 +150,18 @@ export const refreshToken = async (req, res, next) => {
         // 1️⃣ Get refresh token from Cookie (Web)
         const cookieToken = req.cookies?.jwt;
 
-        console.log(cookieToken, "COOKIE TOKEN");
+        // 2️⃣ From Authorization Header (Mobile)
+        const authHeader = req.headers.authorization;
+        const headerToken =
+            authHeader && authHeader.startsWith("Bearer ")
+                ? authHeader.split(" ")[1]
+                : null;
+
 
         // 3️⃣  from JSON Body (Mobile)
         const bodyToken = req.body?.refreshToken;
 
-        const refreshToken = cookieToken || bodyToken;
+        const refreshToken = cookieToken || headerToken || bodyToken;
 
         if (!refreshToken) {
             throw new ApiError(401, "Unauthorized - Refresh token is required");
@@ -264,4 +266,3 @@ export const reSendVerificationCode = async (req, res, next) => {
         info: response
     });
 }
-
