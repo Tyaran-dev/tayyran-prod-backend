@@ -1,8 +1,8 @@
 import { ApiError } from "../../utils/apiError.js";
 import { getAmadeusToken } from "../../utils/amadeus-token.js";
 import axios from "axios";
-import Airport from "../../models/airport.model.js";
-import Airline from "../../models/Airline.model.js";
+import Airport from "../../models/mainDB/airport.model.js";
+import Airline from "../../models/mainDB/Airline.model.js";
 import { whiteListAirLines } from "../../db/airlines.js";
 
 const presentageCommission = 5,

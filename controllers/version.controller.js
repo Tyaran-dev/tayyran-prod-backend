@@ -1,5 +1,5 @@
 import { ApiError } from "../utils/apiError.js";
-import AppVersion from "../models/Version.model.js";
+import AppVersion from "../models/mainDB/Version.model.js";
 
 export const getVersion = async (req, res, next) => {
   try {

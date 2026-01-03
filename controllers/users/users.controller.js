@@ -1,11 +1,7 @@
-import User from "../../models/User.model.js";
+import User from "../../models/mainDB/User.model.js";
 import bcrypt from "bcrypt"
 import { ApiError } from "../../utils/apiError.js";
 
-
-// updateUser
-// deleteUser
-// getAllUsers
 
 
 export const getUser = async (req, res, next) => {
@@ -18,7 +14,6 @@ export const getUser = async (req, res, next) => {
 
         // Logged-in user
         const requester = req.user;
-        console.log(requester)
 
         // 1️⃣ If not admin, user must be requesting HIS OWN data
         if (requester.role !== "admin" && requester._id.toString() !== id) {

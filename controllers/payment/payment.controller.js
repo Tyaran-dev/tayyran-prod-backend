@@ -1,10 +1,10 @@
 import axios from "axios";
 import { ApiError } from "../../utils/apiError.js";
-import TempBookingTicket from "../../models/bookings/TempBooking.js";
-import FinalBooking from "../../models/bookings/FinalBooking.js";
+import TempBookingTicket from "../../models/mainDB/bookings/TempBooking.js";
+import FinalBooking from "../../models/mainDB/bookings/FinalBooking.js";
 import crypto from "crypto";
-import Airport from "../../models/airport.model.js";
-import Airline from "../../models/Airline.model.js";
+import Airport from "../../models/mainDB/airport.model.js";
+import Airline from "../../models/mainDB/Airline.model.js";
 
 export const InitiateSession = async (req, res, next) => {
   try {

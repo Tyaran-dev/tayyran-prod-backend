@@ -1,22 +1,37 @@
-import mongoose from 'mongoose';
-import Airline from '../models/Airline.model.js';
-import { airlines } from './airlines.js';
-import Airport from "../models/airport.model.js";
-import { airports } from "./fc-airports.js";
+import { hotelsConnection } from '../db/connectMongoDB.js'; // Import hotels connection
+import { cities } from './cities.js'; // Your Hotel model
+import City from "../models/hotelsDB/City.model.js"
 
-// Replace with your MongoDB Atlas connection string
-const uri = "mongodb+srv://tayyrandev:TRGauQDp2fMrrN39@cluster0.ized3iy.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0";
+// Main seeding function
+const seedHotels = async () => {
+    try {
+        console.log('Starting hotel data seeding...');
 
-mongoose.connect(uri, { useNewUrlParser: true, useUnifiedTopology: true })
-    .then(async () => {
-        console.log('Connected to MongoDB Atlas');
+        // Wait for hotels database connection
+        await hotelsConnection.asPromise();
+        console.log('✅ Connected to Hotels database');
 
-        // Optional: clear existing data
-        await Airport.deleteMany({});
+        // Optional: Clear existing data
+        await City.deleteMany({});
+        console.log('🗑️  Cleared existing hotel data');
 
-        await Airport.insertMany(airports);
-        console.log('Airline imported successfully');
+        // Insert new data
+        const result = await City.insertMany(cities);
+        console.log(`✅ ${result.length} hotels inserted successfully`);
 
-        mongoose.disconnect();
-    })
-    .catch(err => console.error('MongoDB connection error:', err));
+        // Display inserted hotels
+        console.log('\n📋 Inserted cities:');
+     
+
+        console.log('\n✅ cities seeding completed!');
+        process.exit(0);
+
+    } catch (error) {
+        console.error('❌ Error seeding cities data:', error.message);
+        console.error(error);
+        process.exit(1);
+    }
+};
+
+// Run the seed function
+seedHotels();

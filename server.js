@@ -10,7 +10,7 @@ import filghtsRoute from "./routes/flights/flights.route.js";
 import paymentRoute from "./routes/payment/payment.route.js";
 import hotelsRoute from "./routes/hotels/hotels.route.js";
 import versionRoute from "./routes/version.route.js";
-import connectMongoDB from "./db/connectMongoDB.js";
+import { connectAllDatabases } from './db/connectMongoDB.js';
 import { ApiError } from "./utils/apiError.js";
 import cookieParser from "cookie-parser";
 
@@ -78,7 +78,10 @@ app.use((err, req, res, next) => {
 });
 
 
+// Connect to databases
+await connectAllDatabases();
+
+
 app.listen(PORT, () => {
-  console.log(`✅ Server running on port ${PORT}`);
-  connectMongoDB();
+  console.log(`Server running on port ${PORT}`);
 });
