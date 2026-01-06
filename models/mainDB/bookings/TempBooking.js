@@ -1,6 +1,6 @@
 // models/TempBooking.js
 import { Schema } from 'mongoose';
-import { mainConnection  } from "../../../db/connectMongoDB.js"; // Import your specific connection
+import { mainConnection } from "../../../db/connectMongoDB.js"; // Import your specific connection
 
 
 const TempBookingSchema = new Schema(
@@ -9,6 +9,12 @@ const TempBookingSchema = new Schema(
       type: String,
       required: true,
       unique: true,
+    },
+    // 🔑 VERY IMPORTANT
+    user: {
+      type: Schema.Types.ObjectId,
+      ref: "User",
+      required: false, // allow guest checkout
     },
     bookingType: {
       type: String,

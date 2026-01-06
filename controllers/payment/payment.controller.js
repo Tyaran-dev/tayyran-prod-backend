@@ -31,6 +31,8 @@ export const ExecutePayment = async (req, res, next) => {
   try {
     const { sessionId, invoiceValue, flightData, travelers, hotelData } =
       req.body;
+    const userId = req.user?._id || null;
+
 
     const apiBase = process.env.MYFATOORAH_API_URL;
     const token = process.env.MYFATOORAH_TEST_TOKEN;
@@ -104,6 +106,7 @@ export const ExecutePayment = async (req, res, next) => {
           hotelData,
           bookingType: "hotel", // Explicitly set for clarity
         },
+      user: userId || null, // req.user comes from auth middleware
     });
 
     // Send Payment URL back to frontend
@@ -275,6 +278,9 @@ export const PaymentWebhook = async (req, res) => {
         { new: true }
       );
 
+      const userId = claimedBooking.user || null;
+
+
       // If already processed or not found, exit early (either another retry claimed it, or it was already deleted)
       if (!claimedBooking) {
         const alreadyFinalized = await FinalBooking.findOne({
@@ -378,6 +384,7 @@ export const PaymentWebhook = async (req, res) => {
               invoiceId: InvoiceId,
               paymentId: PaymentId,
               status: "CONFIRMED",
+              user: userId,
               InvoiceValue,
               bookingType,
               bookingPayload: rawBooking,
@@ -414,6 +421,7 @@ export const PaymentWebhook = async (req, res) => {
               status: "FAILED",
               InvoiceValue,
               bookingType,
+              user: userId,
               bookingPayload: rawBooking,
               orderData: response.data || null,
             });
@@ -464,6 +472,7 @@ export const PaymentWebhook = async (req, res) => {
               InvoiceValue,
               bookingType,
               bookingPayload: rawBooking,
+              user: userId,
               orderData: response.data.order,
             });
 
@@ -484,6 +493,7 @@ export const PaymentWebhook = async (req, res) => {
               InvoiceValue,
               bookingType,
               bookingPayload: rawBooking,
+              user: userId,
               orderData: response.data || null,
             });
 
@@ -510,6 +520,7 @@ export const PaymentWebhook = async (req, res) => {
           InvoiceValue,
           orderData: null,
           bookingType,
+          user: userId,
           bookingPayload: rawBooking,
         });
         await axios.post(`${process.env.BASE_URL}/payment/releaseAmount`, {
