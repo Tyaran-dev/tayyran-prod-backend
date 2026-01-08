@@ -11,7 +11,7 @@ router.post("/paymentStatus", GetPaymentStatus);
 router.post("/bookingStatus", GetBookingStatus);
 router.post("/captureAmount", captureAuthorizedPayment);
 router.post("/releaseAmount", releaseAuthorizedPayment);
-router.post("/saveData", saveDataToDb);
+router.post("/saveData", optionalAuth, saveDataToDb);
 
 
 
