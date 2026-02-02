@@ -8,10 +8,12 @@ import {
   preBookRoom,
   bookRoom,
   BookingDetails,
-  getRandomHotels
+  getRandomHotels,
+  search
 } from "../../controllers/hotels/hotels.controller.js";
 
 router.get("/CountryList", getCountryList);
+router.get("/search", search);
 router.post("/CityList", getCityList);
 router.post("/HotelsSearch", hotelsSearch);
 router.post("/HotelDetails", getHotelDetails);

@@ -1,5 +1,7 @@
 import axios from "axios";
 import { ApiError } from "../../utils/apiError.js";
+import { prisma, Prisma } from '../../utils/prisma.js'
+
 
 const presentageCommission = 5;
 
@@ -10,6 +12,82 @@ const formatDate = (dateStr) => {
   const day = `0${date.getDate()}`.slice(-2);
   return `${year}-${month}-${day}`;
 };
+
+
+export const search = async (req, res, next) => {
+  try {
+    const searchQuery = (req.query.q || "").trim();
+
+    if (!searchQuery) {
+      return res.status(400).json({ message: "Search text is required" });
+    }
+
+    /* ===============================
+       1️⃣ Cities search (same table)
+       =============================== */
+    const cities = await prisma.hotel.findMany({
+      where: {
+        city_name: {
+          contains: searchQuery,
+          mode: "insensitive",
+        },
+      },
+      distinct: ["city_code"],
+      select: {
+        city_name: true,
+        city_code: true,
+        country_name: true,
+      },
+      take: 10,
+    });
+
+    /* ===============================
+       2️⃣ Hotels search (FULL-TEXT)
+       =============================== */
+    const hotels = await prisma.$queryRaw(
+      Prisma.sql`
+        SELECT
+          hotel_id AS id,
+          hotel_code,
+          name,
+          address,
+          city_code,
+          city_name,
+          country_name,
+          star_rating,
+          image_urls
+        FROM hotels
+        WHERE name_search @@ plainto_tsquery(${searchQuery})
+      `
+    );
+
+    // add type to cities
+    const citiesWithType = cities.map(city => ({
+      ...city,
+      type: "city",
+    }));
+
+    // add type to hotels
+    const hotelsWithType = hotels.map(hotel => ({
+      ...hotel,
+      type: "hotel",
+    }));
+
+    return res.json({
+      cities: citiesWithType,
+      hotels: hotelsWithType,
+    });
+  } catch (error) {
+    next(
+      new ApiError(
+        error.response?.status || 500,
+        error.response?.data?.errors?.[0]?.detail ||
+        "Error searching for hotels"
+      )
+    );
+  }
+}
+
 
 export const getCountryList = async (req, res, next) => {
   try {
@@ -29,7 +107,7 @@ export const getCountryList = async (req, res, next) => {
       new ApiError(
         error.response?.status || 500,
         error.response?.data?.errors?.[0]?.detail ||
-          "Error searching for countries"
+        "Error searching for countries"
       )
     );
   }
@@ -61,7 +139,7 @@ export const getCityList = async (req, res, next) => {
       new ApiError(
         error.response?.status || 500,
         error.response?.data?.errors?.[0]?.detail ||
-          "Error searching for cities"
+        "Error searching for cities"
       )
     );
   }
@@ -246,7 +324,7 @@ export const hotelsSearch = async (req, res, next) => {
       new ApiError(
         error.response?.status || 500,
         error.response?.data?.errors?.[0]?.detail ||
-          "Error searching for hotels"
+        "Error searching for hotels"
       )
     );
   }
@@ -321,7 +399,7 @@ export const getHotelDetails = async (req, res, next) => {
       new ApiError(
         error.response?.status || 500,
         error.response?.data?.errors?.[0]?.detail ||
-          "Error searching for Hotel Details "
+        "Error searching for Hotel Details "
       )
     );
   }
@@ -351,7 +429,7 @@ export const preBookRoom = async (req, res, next) => {
       new ApiError(
         error.response?.status || 500,
         error.response?.data?.errors?.[0]?.detail ||
-          "Error searching for Hotel Details "
+        "Error searching for Hotel Details "
       )
     );
   }
@@ -407,7 +485,7 @@ export const bookRoom = async (req, res, next) => {
       new ApiError(
         error.response?.status || 500,
         error.response?.data?.errors?.[0]?.detail ||
-          "Error searching for Hotel Details"
+        "Error searching for Hotel Details"
       )
     );
   }
@@ -454,8 +532,8 @@ export const BookingDetails = async (req, res, next) => {
       new ApiError(
         error.response?.status || 500,
         error.response?.data?.errors?.[0]?.detail ||
-          error.response?.data?.error ||
-          "Error fetching booking details from TBO"
+        error.response?.data?.error ||
+        "Error fetching booking details from TBO"
       )
     );
   }
@@ -592,8 +670,8 @@ export const getRandomHotels = async (req, res, next) => {
       new ApiError(
         error.response?.status || 500,
         error.response?.data?.errors?.[0]?.detail ||
-          error.response?.data?.error ||
-          "Error fetching random hotels from TBO"
+        error.response?.data?.error ||
+        "Error fetching random hotels from TBO"
       )
     );
   }
