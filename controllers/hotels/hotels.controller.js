@@ -2,6 +2,19 @@ import axios from "axios";
 import { ApiError } from "../../utils/apiError.js";
 import { prisma, Prisma } from '../../utils/prisma.js'
 
+// Simple in-memory cache for search results (5 min TTL)
+const searchCache = new Map();
+const CACHE_TTL = 10 * 60 * 1000; // 5 minutes
+
+// Clean up expired cache entries periodically
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, value] of searchCache.entries()) {
+    if (now - value.timestamp > CACHE_TTL) {
+      searchCache.delete(key);
+    }
+  }
+}, 60 * 1000); // Clean every minute
 
 const presentageCommission = 5;
 
@@ -181,6 +194,310 @@ const pLimit = (concurrency) => {
 
   return (fn, ...args) => enqueue(fn, args);
 };
+// Optimized hotel search with progressive loading
+export const searchHotels = async (req, res, next) => {
+  try {
+    const userName = process.env.TBO_LIVE_USER_NAME,
+      password = process.env.TBO_LIVE_PASSWORD,
+      baseURL = process.env.TBO_LIVE_URL;
+
+    const {
+      CheckIn,
+      CheckOut,
+      Code,
+      Type,
+      GuestNationality,
+      PreferredCurrencyCode = "SAR",
+      PaxRooms,
+      Language = "EN",
+      page = 1,
+    } = req.body;
+
+    // Step 0: Basic validation
+    if (!Code || !Type || !CheckIn || !CheckOut || !PaxRooms || !GuestNationality) {
+      return next(
+        new ApiError(400, "Missing required fields for hotel search")
+      );
+    }
+
+    // Step 1: Generate cache key
+    const cacheKey = `search:${Code}:${Type}:${formatDate(CheckIn)}:${formatDate(CheckOut)}:${GuestNationality}:${JSON.stringify(PaxRooms)}`;
+
+    // Step 2: Check cache
+    const cached = searchCache.get(cacheKey);
+    if (cached) {
+      const now = Date.now();
+      const isComplete = cached.isComplete;
+      const isExpired = now - cached.timestamp > CACHE_TTL;
+
+      if (!isExpired) {
+        console.log(`✅ Returning cached results (${cached.availableHotels.length} hotels, complete: ${isComplete})`);
+
+        // Paginate cached results
+        const startIndex = (page - 1) * PER_PAGE;
+        const paginatedHotels = cached.availableHotels.slice(startIndex, startIndex + PER_PAGE);
+
+        if (paginatedHotels.length === 0 && page > 1) {
+          return res.status(400).json({
+            success: false,
+            message: `No hotels found for page ${page}.`,
+          });
+        }
+
+        return res.status(200).json({
+          success: true,
+          data: paginatedHotels,
+          pagination: {
+            page,
+            perPage: PER_PAGE,
+            total: cached.availableHotels.length,
+            totalPages: Math.ceil(cached.availableHotels.length / PER_PAGE),
+            isComplete, // Indicates if all hotels have been processed
+          },
+          cached: true,
+        });
+      } else {
+        // Cache expired, remove it
+        searchCache.delete(cacheKey);
+      }
+    }
+
+    console.log("🔍 Cache miss - fetching fresh data");
+
+    // Step 3: Fetch all hotels from database
+    let allHotels;
+    if (Type === "city") {
+      allHotels = await prisma.hotel.findMany({
+        where: { city_code: Code },
+      });
+    } else if (Type === "hotel") {
+      const hotel = await prisma.hotel.findUnique({
+        where: { hotel_code: Code },
+      });
+      allHotels = hotel ? [hotel] : [];
+    }
+
+    if (!allHotels || allHotels.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "No hotels found for the selected code.",
+      });
+    }
+
+    console.log(`📊 Found ${allHotels.length} hotels in database`);
+
+    // Step 4: Progressive loading - process batches until we have enough for the requested page
+    const BATCH_SIZE = 50;
+    const availableHotels = [];
+    const hotelMap = new Map(allHotels.map(h => [h.hotel_code, h]));
+
+    // Calculate how many hotels we need for the requested page
+    const hotelsNeededForPage = page * PER_PAGE;
+    const BUFFER_SIZE = 20; // Extra buffer to account for low availability
+    const targetForQuickResponse = hotelsNeededForPage + BUFFER_SIZE;
+
+    let offset = 0;
+    let batchNumber = 1;
+    let shouldReturnEarly = false;
+
+    // Process batches until we have enough for the requested page
+    while (offset < allHotels.length && !shouldReturnEarly) {
+      const batch = allHotels.slice(offset, offset + BATCH_SIZE);
+      const batchCodes = batch.map(h => h.hotel_code);
+
+      console.log(`🔄 Processing batch ${batchNumber}: ${batchCodes.length} hotels (offset: ${offset})`);
+
+      try {
+        // Check TBO availability for this batch
+        const response = await axios.post(
+          `${baseURL}/Search`,
+          {
+            CheckIn: formatDate(CheckIn),
+            CheckOut: formatDate(CheckOut),
+            HotelCodes: batchCodes.join(","),
+            GuestNationality,
+            PreferredCurrencyCode,
+            PaxRooms,
+            ResponseTime: 23.0,
+            IsDetailedResponse: true,
+            Filters: {
+              Refundable: false,
+              NoOfRooms: 20,
+              MealType: "All",
+            },
+          },
+          {
+            auth: { username: userName, password },
+          }
+        );
+
+        const batchResults = response.data?.HotelResult || [];
+        console.log(`✅ Batch ${batchNumber}: ${batchResults.length} hotels available`);
+
+        // Merge hotel details with TBO results
+        for (const tboHotel of batchResults) {
+          const dbHotel = hotelMap.get(tboHotel.HotelCode);
+          if (dbHotel) {
+            availableHotels.push({
+              ...dbHotel,
+              ...tboHotel,
+              MinHotelPrice: tboHotel?.Rooms?.[0]?.DayRates?.[0]?.[0]?.BasePrice || null,
+              presentageCommission,
+            });
+          }
+        }
+
+        // Check if we have enough hotels for the requested page
+        if (availableHotels.length >= targetForQuickResponse) {
+          console.log(`🎯 Got ${availableHotels.length} hotels - enough for page ${page}. Returning early.`);
+          shouldReturnEarly = true;
+        }
+
+      } catch (error) {
+        console.error(`❌ Error processing batch ${batchNumber}:`, error.message);
+        // Continue with next batch even if this one fails
+      }
+
+      offset += BATCH_SIZE;
+      batchNumber++;
+    }
+
+    const isComplete = offset >= allHotels.length;
+    console.log(`📦 Processed ${offset}/${allHotels.length} hotels. Available: ${availableHotels.length}. Complete: ${isComplete}`);
+
+    // Step 5: Cache the results (even if incomplete)
+    searchCache.set(cacheKey, {
+      availableHotels,
+      timestamp: Date.now(),
+      isComplete,
+      totalProcessed: offset,
+      totalHotels: allHotels.length,
+    });
+
+    // Step 6: Continue processing remaining hotels in background (if not complete)
+    if (!isComplete && availableHotels.length > 0) {
+      console.log(`🔄 Starting background processing for remaining ${allHotels.length - offset} hotels`);
+
+      // Process remaining hotels asynchronously
+      setImmediate(async () => {
+        try {
+          const remainingAvailableHotels = [...availableHotels];
+          let bgOffset = offset;
+          let bgBatchNumber = batchNumber;
+
+          while (bgOffset < allHotels.length) {
+            const batch = allHotels.slice(bgOffset, bgOffset + BATCH_SIZE);
+            const batchCodes = batch.map(h => h.hotel_code);
+
+            console.log(`🔄 [Background] Processing batch ${bgBatchNumber}: ${batchCodes.length} hotels`);
+
+            try {
+              const response = await axios.post(
+                `${baseURL}/Search`,
+                {
+                  CheckIn: formatDate(CheckIn),
+                  CheckOut: formatDate(CheckOut),
+                  HotelCodes: batchCodes.join(","),
+                  GuestNationality,
+                  PreferredCurrencyCode,
+                  PaxRooms,
+                  ResponseTime: 23.0,
+                  IsDetailedResponse: true,
+                  Filters: {
+                    Refundable: false,
+                    NoOfRooms: 20,
+                    MealType: "All",
+                  },
+                },
+                {
+                  auth: { username: userName, password },
+                }
+              );
+
+              const batchResults = response.data?.HotelResult || [];
+              console.log(`✅ [Background] Batch ${bgBatchNumber}: ${batchResults.length} hotels available`);
+
+              for (const tboHotel of batchResults) {
+                const dbHotel = hotelMap.get(tboHotel.HotelCode);
+                if (dbHotel) {
+                  remainingAvailableHotels.push({
+                    ...dbHotel,
+                    ...tboHotel,
+                    MinHotelPrice: tboHotel?.Rooms?.[0]?.DayRates?.[0]?.[0]?.BasePrice || null,
+                    presentageCommission,
+                  });
+                }
+              }
+
+              // Update cache with new results
+              searchCache.set(cacheKey, {
+                availableHotels: remainingAvailableHotels,
+                timestamp: Date.now(),
+                isComplete: bgOffset + BATCH_SIZE >= allHotels.length,
+                totalProcessed: bgOffset + BATCH_SIZE,
+                totalHotels: allHotels.length,
+              });
+
+            } catch (error) {
+              console.error(`❌ [Background] Error processing batch ${bgBatchNumber}:`, error.message);
+            }
+
+            bgOffset += BATCH_SIZE;
+            bgBatchNumber++;
+          }
+
+          console.log(`✅ [Background] Processing complete. Total available: ${remainingAvailableHotels.length}`);
+        } catch (error) {
+          console.error('❌ [Background] Fatal error:', error.message);
+        }
+      });
+    }
+
+    // Step 7: Paginate and return results
+    const startIndex = (page - 1) * PER_PAGE;
+    const paginatedHotels = availableHotels.slice(startIndex, startIndex + PER_PAGE);
+
+    if (paginatedHotels.length === 0 && availableHotels.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: `Page ${page} is out of range. Total pages available: ${Math.ceil(availableHotels.length / PER_PAGE)}`,
+      });
+    }
+
+    if (availableHotels.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "No hotels with available rooms found for the selected criteria.",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: paginatedHotels,
+      pagination: {
+        page,
+        perPage: PER_PAGE,
+        total: availableHotels.length,
+        totalPages: Math.ceil(availableHotels.length / PER_PAGE),
+        isComplete, // Important: tells frontend if more hotels might be available
+      },
+      cached: false,
+    });
+
+  } catch (error) {
+    console.error(
+      "Hotel search error:",
+      error?.response?.data || error.message
+    );
+    next(
+      new ApiError(
+        error.response?.status || 500,
+        error.response?.data?.errors?.[0]?.detail ||
+        "Error searching for hotels"
+      )
+    );
+  }
+}
 
 // === Main Controller ===
 export const hotelsSearch = async (req, res, next) => {
@@ -353,7 +670,6 @@ export const getHotelDetails = async (req, res, next) => {
     const hotelSearchPayload = {
       CheckIn: formatDate(CheckIn),
       CheckOut: formatDate(CheckOut),
-      CityCode,
       HotelCodes,
       GuestNationality,
       PreferredCurrencyCode,
@@ -380,12 +696,25 @@ export const getHotelDetails = async (req, res, next) => {
 
     const hotel = hotelDetails.data.HotelDetails;
 
+
     const getRooms = await axios.post(`${baseURL}/Search`, hotelSearchPayload, {
       auth: { username: userName, password },
     });
 
-    const availableRooms = getRooms.data?.HotelResult[0].Rooms || [];
-    // console.log(availableRooms, "avilaible rooooooooms")
+    console.log(getRooms.data, "getRooms");
+
+    let availableRooms = [];
+    if (getRooms.data?.HotelResult?.[0]?.Rooms) {
+      availableRooms = getRooms.data.HotelResult[0].Rooms;
+    } else if (
+      getRooms.data?.Status?.Code === 201 ||
+      getRooms.data?.Status?.Description?.includes("No Available rooms")
+    ) {
+      console.log("No rooms available for this hotel (TBO 201)");
+      availableRooms = [];
+    } else {
+      console.warn("Unexpected room search response:", getRooms.data);
+    }
 
     return res.status(200).json({
       data: {

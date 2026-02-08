@@ -9,11 +9,13 @@ import {
   bookRoom,
   BookingDetails,
   getRandomHotels,
-  search
+  search,
+  searchHotels
 } from "../../controllers/hotels/hotels.controller.js";
 
 router.get("/CountryList", getCountryList);
 router.get("/search", search);
+router.post("/searchHotels", searchHotels);
 router.post("/CityList", getCityList);
 router.post("/HotelsSearch", hotelsSearch);
 router.post("/HotelDetails", getHotelDetails);
