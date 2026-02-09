@@ -91,11 +91,11 @@ export const search = async (req, res, next) => {
       hotels: hotelsWithType,
     });
   } catch (error) {
+    console.error("🔥 REAL ERROR =>", error);   // 👈 add this
     next(
       new ApiError(
-        error.response?.status || 500,
-        error.response?.data?.errors?.[0]?.detail ||
-        "Error searching for hotels"
+        500,
+        error.message || "Error searching for hotels"
       )
     );
   }
