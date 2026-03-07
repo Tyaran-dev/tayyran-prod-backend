@@ -4,7 +4,7 @@ import { prisma, Prisma } from '../../utils/prisma.js'
 
 // Simple in-memory cache for search results (5 min TTL)
 const searchCache = new Map();
-const CACHE_TTL = 10 * 60 * 1000; // 5 minutes
+const CACHE_TTL = 60 * 60 * 1000; // 5 minutes
 
 // Clean up expired cache entries periodically
 setInterval(() => {
@@ -91,11 +91,11 @@ export const search = async (req, res, next) => {
       hotels: hotelsWithType,
     });
   } catch (error) {
-    console.error("🔥 REAL ERROR =>", error);   // 👈 add this
     next(
       new ApiError(
-        500,
-        error.message || "Error searching for hotels"
+        error.response?.status || 500,
+        error.response?.data?.errors?.[0]?.detail ||
+        "Error searching for hotels"
       )
     );
   }
@@ -195,6 +195,67 @@ const pLimit = (concurrency) => {
   return (fn, ...args) => enqueue(fn, args);
 };
 // Optimized hotel search with progressive loading
+// === Helper: apply filters, search, sort to a hotel list ===
+const applyFiltersAndSort = (hotels, { nameSearch, sortBy, minPrice, maxPrice, starRatings }) => {
+  let result = hotels;
+
+  // Name search
+  if (nameSearch && nameSearch.trim() !== '') {
+    const q = nameSearch.trim().toLowerCase();
+    result = result.filter(h => (h.name || '').toLowerCase().includes(q));
+  }
+
+  // Star rating filter (array of rating strings like ['Four', 'Five'])
+  if (starRatings && starRatings.length > 0) {
+    result = result.filter(h => starRatings.includes(h.star_rating));
+  }
+
+  // Price range filter
+  const hasMinPrice = minPrice !== undefined && minPrice !== null;
+  const hasMaxPrice = maxPrice !== undefined && maxPrice !== null;
+if (hasMinPrice || hasMaxPrice) {
+  result = result.filter(h => {
+    const price = Number(h.MinHotelPrice);
+
+    if (!price || isNaN(price)) return false;
+
+    if (hasMinPrice && price < Number(minPrice)) return false;
+    if (hasMaxPrice && price > Number(maxPrice)) return false;
+
+    return true;
+  });
+}
+
+  // Sort
+  if (sortBy && sortBy !== 'none') {
+    const ratingMap = { One: 1, Two: 2, Three: 3, Four: 4, Five: 5 };
+    result = [...result].sort((a, b) => {
+      switch (sortBy) {
+        case 'price-asc':
+          return (a.MinHotelPrice || 0) - (b.MinHotelPrice || 0);
+        case 'price-desc':
+          return (b.MinHotelPrice || 0) - (a.MinHotelPrice || 0);
+        case 'star-asc':
+          return (ratingMap[a.star_rating] || 0) - (ratingMap[b.star_rating] || 0);
+        case 'star-desc':
+          return (ratingMap[b.star_rating] || 0) - (ratingMap[a.star_rating] || 0);
+        default:
+          return 0;
+      }
+    });
+  }
+
+  return result;
+};
+
+// Helper: does this request have any active filter/sort/search that requires complete data?
+const hasActiveFilters = ({ nameSearch, sortBy, minPrice, maxPrice, starRatings }) =>
+  !!(nameSearch && nameSearch.trim()) ||
+  (sortBy && sortBy !== 'none') ||
+  minPrice !== undefined ||
+  maxPrice !== undefined ||
+  (starRatings && starRatings.length > 0);
+
 export const searchHotels = async (req, res, next) => {
   try {
     const userName = process.env.TBO_LIVE_USER_NAME,
@@ -211,7 +272,16 @@ export const searchHotels = async (req, res, next) => {
       PaxRooms,
       Language = "EN",
       page = 1,
+      // Filter/sort/search params
+      nameSearch,
+      sortBy,
+      minPrice,
+      maxPrice,
+      starRatings,
     } = req.body;
+
+
+    
 
     // Step 0: Basic validation
     if (!Code || !Type || !CheckIn || !CheckOut || !PaxRooms || !GuestNationality) {
@@ -224,18 +294,26 @@ export const searchHotels = async (req, res, next) => {
     const cacheKey = `search:${Code}:${Type}:${formatDate(CheckIn)}:${formatDate(CheckOut)}:${GuestNationality}:${JSON.stringify(PaxRooms)}`;
 
     // Step 2: Check cache
-    const cached = searchCache.get(cacheKey);
+    const filterParams = { nameSearch, sortBy, minPrice, maxPrice, starRatings };
+    const filtersActive = hasActiveFilters(filterParams);
+    let cached = searchCache.get(cacheKey);
+
     if (cached) {
       const now = Date.now();
-      const isComplete = cached.isComplete;
       const isExpired = now - cached.timestamp > CACHE_TTL;
 
-      if (!isExpired) {
-        console.log(`✅ Returning cached results (${cached.availableHotels.length} hotels, complete: ${isComplete})`);
+      if (isExpired) {
+        searchCache.delete(cacheKey);
+        cached = null;
+      } else {
+        // We no longer force sync completion here so that the user can filter 
+        // on the currently available (already loaded) hotels during background progressive loading.
 
-        // Paginate cached results
+        console.log(`✅ Returning cached results (${cached.availableHotels.length} hotels, complete: ${cached.isComplete})`);
+
+        const filtered = applyFiltersAndSort(cached.availableHotels, filterParams);
         const startIndex = (page - 1) * PER_PAGE;
-        const paginatedHotels = cached.availableHotels.slice(startIndex, startIndex + PER_PAGE);
+        const paginatedHotels = filtered.slice(startIndex, startIndex + PER_PAGE);
 
         if (paginatedHotels.length === 0 && page > 1) {
           return res.status(400).json({
@@ -250,15 +328,12 @@ export const searchHotels = async (req, res, next) => {
           pagination: {
             page,
             perPage: PER_PAGE,
-            total: cached.availableHotels.length,
-            totalPages: Math.ceil(cached.availableHotels.length / PER_PAGE),
-            isComplete, // Indicates if all hotels have been processed
+            total: filtered.length,
+            totalPages: Math.ceil(filtered.length / PER_PAGE),
+            isComplete: cached.isComplete,
           },
           cached: true,
         });
-      } else {
-        // Cache expired, remove it
-        searchCache.delete(cacheKey);
       }
     }
 
@@ -365,9 +440,11 @@ export const searchHotels = async (req, res, next) => {
     const isComplete = offset >= allHotels.length;
     console.log(`📦 Processed ${offset}/${allHotels.length} hotels. Available: ${availableHotels.length}. Complete: ${isComplete}`);
 
-    // Step 5: Cache the results (even if incomplete)
+    // Step 5: Cache the results (store allDbHotels + hotelMap for sync-complete resumability)
     searchCache.set(cacheKey, {
       availableHotels,
+      allDbHotels: allHotels,   // full DB list – needed to resume when filters applied
+      hotelMap,                  // needed to merge TBO results on resume
       timestamp: Date.now(),
       isComplete,
       totalProcessed: offset,
@@ -429,14 +506,19 @@ export const searchHotels = async (req, res, next) => {
                 }
               }
 
-              // Update cache with new results
-              searchCache.set(cacheKey, {
-                availableHotels: remainingAvailableHotels,
-                timestamp: Date.now(),
-                isComplete: bgOffset + BATCH_SIZE >= allHotels.length,
-                totalProcessed: bgOffset + BATCH_SIZE,
-                totalHotels: allHotels.length,
-              });
+              // Update cache only if we have MORE hotels than currently cached
+              // (guards against overwriting a sync-complete result with a partial one)
+              const existingCached = searchCache.get(cacheKey);
+              if (!existingCached || remainingAvailableHotels.length >= existingCached.availableHotels.length) {
+                searchCache.set(cacheKey, {
+                  ...(existingCached || {}),
+                  availableHotels: remainingAvailableHotels,
+                  timestamp: existingCached?.timestamp || Date.now(),
+                  isComplete: bgOffset + BATCH_SIZE >= allHotels.length,
+                  totalProcessed: bgOffset + BATCH_SIZE,
+                  totalHotels: allHotels.length,
+                });
+              }
 
             } catch (error) {
               console.error(`❌ [Background] Error processing batch ${bgBatchNumber}:`, error.message);
@@ -453,21 +535,22 @@ export const searchHotels = async (req, res, next) => {
       });
     }
 
-    // Step 7: Paginate and return results
+    // Step 7: Apply filter/sort/search on full list, then paginate
+    const filteredHotels = applyFiltersAndSort(availableHotels, { nameSearch, sortBy, minPrice, maxPrice, starRatings });
     const startIndex = (page - 1) * PER_PAGE;
-    const paginatedHotels = availableHotels.slice(startIndex, startIndex + PER_PAGE);
+    const paginatedHotels = filteredHotels.slice(startIndex, startIndex + PER_PAGE);
 
-    if (paginatedHotels.length === 0 && availableHotels.length > 0) {
-      return res.status(400).json({
+    if (filteredHotels.length === 0) {
+      return res.status(404).json({
         success: false,
-        message: `Page ${page} is out of range. Total pages available: ${Math.ceil(availableHotels.length / PER_PAGE)}`,
+        message: "No hotels match the selected filters.",
       });
     }
 
-    if (availableHotels.length === 0) {
-      return res.status(404).json({
+    if (paginatedHotels.length === 0 && filteredHotels.length > 0) {
+      return res.status(400).json({
         success: false,
-        message: "No hotels with available rooms found for the selected criteria.",
+        message: `Page ${page} is out of range. Total pages available: ${Math.ceil(filteredHotels.length / PER_PAGE)}`,
       });
     }
 
@@ -477,9 +560,9 @@ export const searchHotels = async (req, res, next) => {
       pagination: {
         page,
         perPage: PER_PAGE,
-        total: availableHotels.length,
-        totalPages: Math.ceil(availableHotels.length / PER_PAGE),
-        isComplete, // Important: tells frontend if more hotels might be available
+        total: filteredHotels.length,
+        totalPages: Math.ceil(filteredHotels.length / PER_PAGE),
+        isComplete,
       },
       cached: false,
     });

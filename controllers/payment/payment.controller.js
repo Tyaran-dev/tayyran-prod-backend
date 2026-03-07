@@ -33,6 +33,8 @@ export const ExecutePayment = async (req, res, next) => {
       req.body;
     const userId = req.user?._id || null;
 
+    console.log(userId, "here")
+
 
     const apiBase = process.env.MYFATOORAH_API_URL;
     const token = process.env.MYFATOORAH_TEST_TOKEN;
@@ -719,7 +721,6 @@ export const saveDataToDb = async (req, res, next) => {
     const userId = req.user?._id || null;
 
 
-    console.log(req.body, "here123");
 
     // ✅ Validate required fields
     if (!invoiceId || (!flightData && !hotelData)) {
