@@ -1,29 +1,27 @@
-import { hotelsConnection } from '../db/connectMongoDB.js'; // Import hotels connection
-import { cities } from './cities.js'; // Your Hotel model
-import City from "../models/hotelsDB/City.model.js"
+import dotenv from 'dotenv';
+import {connectAllDatabases} from "./connectMongoDB.js";
+import Airport from "../models/mainDB/airport.model.js";
+import Airline from '../models/mainDB/Airline.model.js';
+import {airports} from "../data/fc-airports.js";
+import {airlines} from "../data/airlines.js"
 
-// Main seeding function
-const seedHotels = async () => {
+// Load environment variables FIRST
+dotenv.config();
+
+const seedData = async () => {
     try {
-        console.log('Starting hotel data seeding...');
+        console.log('Starting  data seeding...');
 
-        // Wait for hotels database connection
-        await hotelsConnection.asPromise();
-        console.log('✅ Connected to Hotels database');
+        await connectAllDatabases();
+        console.log('✅ Connected to  database');
 
-        // Optional: Clear existing data
-        await City.deleteMany({});
-        console.log('🗑️  Cleared existing hotel data');
+        await Airline.deleteMany({});
+        console.log('🗑️  Cleared existing  data');
 
-        // Insert new data
-        const result = await City.insertMany(cities);
-        console.log(`✅ ${result.length} hotels inserted successfully`);
+        const result = await Airline.insertMany(airlines)
+        console.log(`✅ ${result.length} data inserted successfully`);
 
-        // Display inserted hotels
-        console.log('\n📋 Inserted cities:');
-     
-
-        console.log('\n✅ cities seeding completed!');
+        console.log('\n✅ data seeding completed!');
         process.exit(0);
 
     } catch (error) {
@@ -31,7 +29,7 @@ const seedHotels = async () => {
         console.error(error);
         process.exit(1);
     }
-};
+}
 
 // Run the seed function
-seedHotels();
+seedData();
