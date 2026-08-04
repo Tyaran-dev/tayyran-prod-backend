@@ -213,18 +213,18 @@ const applyFiltersAndSort = (hotels, { nameSearch, sortBy, minPrice, maxPrice, s
   // Price range filter
   const hasMinPrice = minPrice !== undefined && minPrice !== null;
   const hasMaxPrice = maxPrice !== undefined && maxPrice !== null;
-if (hasMinPrice || hasMaxPrice) {
-  result = result.filter(h => {
-    const price = Number(h.MinHotelPrice);
+  if (hasMinPrice || hasMaxPrice) {
+    result = result.filter(h => {
+      const price = Number(h.MinHotelPrice);
 
-    if (!price || isNaN(price)) return false;
+      if (!price || isNaN(price)) return false;
 
-    if (hasMinPrice && price < Number(minPrice)) return false;
-    if (hasMaxPrice && price > Number(maxPrice)) return false;
+      if (hasMinPrice && price < Number(minPrice)) return false;
+      if (hasMaxPrice && price > Number(maxPrice)) return false;
 
-    return true;
-  });
-}
+      return true;
+    });
+  }
 
   // Sort
   if (sortBy && sortBy !== 'none') {
@@ -281,7 +281,7 @@ export const searchHotels = async (req, res, next) => {
     } = req.body;
 
 
-    
+
 
     // Step 0: Basic validation
     if (!Code || !Type || !CheckIn || !CheckOut || !PaxRooms || !GuestNationality) {
@@ -959,6 +959,8 @@ export const getRandomHotels = async (req, res, next) => {
     const { cities } = req.body;
     const cityList = Array.isArray(cities) ? cities : cities.split(",");
 
+    console.log(cities, "cities");
+
     const stayDays = [2, 3, 4];
     const today = new Date();
     const checkIn = new Date(today);
@@ -978,10 +980,7 @@ export const getRandomHotels = async (req, res, next) => {
 
       const hotels = hotelCodesRes.data?.Hotels || [];
 
-      if (!hotels.length) {
-        console.log(`❌ No hotels found for city ${cityCode}`);
-        continue;
-      }
+ 
 
       // Step 2️⃣: Pick a random hotel and search for availability
       let selectedHotel = null;
