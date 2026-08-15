@@ -1,4 +1,5 @@
 import User from "../../models/mainDB/User.model.js";
+import FinalBookingTicket from "../../models/mainDB/bookings/FinalBooking.js";
 import bcrypt from "bcrypt"
 import { ApiError } from "../../utils/apiError.js";
 import jwt from "jsonwebtoken";
@@ -206,13 +207,28 @@ export const refreshToken = async (req, res, next) => {
 }
 
 export const getMe = async (req, res, next) => {
-    const user = req.user
-    if (!user) {
+    if (!req.user) {
         throw new ApiError(401, "Not authorized");
     }
 
-    res.json({ user });
-}
+    const user = await User.findById(req.user._id)
+        .populate({
+            path: "bookings",
+            options: {
+                sort: {
+                    createdAt: -1,
+                },
+            },
+        });
+
+    if (!user) {
+        throw new ApiError(404, "User not found");
+    }
+
+    res.status(200).json({
+        user,
+    });
+};
 
 export const reSendVerificationCode = async (req, res, next) => {
     const { email } = req.body;
