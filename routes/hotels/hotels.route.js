@@ -10,7 +10,8 @@ import {
   BookingDetails,
   getRandomHotels,
   search,
-  searchHotels
+  searchHotels,
+  sendHotelBookingEmail
 } from "../../controllers/hotels/hotels.controller.js";
 
 router.get("/CountryList", getCountryList);
@@ -23,5 +24,6 @@ router.post("/PreBookRoom", preBookRoom);
 router.post("/BookRoom", bookRoom);
 router.post("/BookingDetail", BookingDetails);
 router.post("/RandomHotels", getRandomHotels);
+router.post("/send-booking-email", sendHotelBookingEmail);
 
 export default router;
