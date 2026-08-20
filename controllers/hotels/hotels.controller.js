@@ -2,6 +2,9 @@ import axios from "axios";
 import { ApiError } from "../../utils/apiError.js";
 import { prisma, Prisma } from '../../utils/prisma.js'
 import sendEmail from "../../utils/sendEmail.js";
+import { buildHotelBookingEmail } from "../../utils/sendEmail.js";
+import FinalBooking from "../../models/mainDB/bookings/FinalBooking.js";
+
 // Simple in-memory cache for search results (5 min TTL)
 const searchCache = new Map();
 const CACHE_TTL = 60 * 60 * 1000; // 5 minutes
@@ -980,7 +983,7 @@ export const getRandomHotels = async (req, res, next) => {
 
       const hotels = hotelCodesRes.data?.Hotels || [];
 
- 
+
 
       // Step 2️⃣: Pick a random hotel and search for availability
       let selectedHotel = null;
@@ -1090,80 +1093,123 @@ export const getRandomHotels = async (req, res, next) => {
 
 export const sendHotelBookingEmail = async (req, res) => {
   try {
-    const { bookingData } = req.body;
-    
-    if (!bookingData) {
-      return res.status(400).json({ error: "bookingData is required" });
+    const { invoiceId, paymentId } = req.body;
+
+    // At least one identifier is required
+    if (!invoiceId && !paymentId) {
+      return res.status(400).json({
+        error: "Either invoiceId or paymentId is required",
+      });
     }
 
-    const order = bookingData.order;
-    const hotelData = order?.bookingPayload?.hotelData;
-    const confirmationNumber = order?.orderData?.data?.ConfirmationNumber;
-    const clientReference = order?.orderData?.data?.ClientReferenceId;
-    const status = order?.status;
-    const invoiceId = order?.invoiceId;
-    const totalAmount = order?.InvoiceValue;
-    const guest = hotelData?.CustomerDetails?.[0]?.CustomerNames?.[0] || null;
-    const guestName = guest ? `${guest.Title} ${guest.FirstName} ${guest.LastName}` : "";
-    const email = hotelData?.EmailId;
-    const phone = hotelData?.PhoneNumber;
+    // Build query based on the provided identifier(s)
+    const bookingQuery = [];
 
-    if (!email) {
-      return res.status(400).json({ error: "Email is missing in bookingData" });
+    if (invoiceId) {
+      bookingQuery.push({ invoiceId });
     }
 
-    const htmlMessage = `
-      <div style="font-family: Arial, sans-serif; color: #333; max-width: 600px; margin: 0 auto; border: 1px solid #eee; border-radius: 8px; overflow: hidden;">
-        <div style="background-color: #f8f9fa; padding: 20px; text-align: center; border-bottom: 1px solid #eee;">
-          <h1 style="color: #4CAF50; margin: 0;">Thank You for Your Booking!</h1>
-        </div>
-        <div style="padding: 20px;">
-          <p>Dear ${guestName || 'Guest'},</p>
-          <p>Your hotel booking has been <strong>${status || 'confirmed'}</strong>. Here are your booking details:</p>
-          
-          <table style="width: 100%; border-collapse: collapse; margin-top: 20px;">
-            <tr>
-              <td style="padding: 10px; border-bottom: 1px solid #eee; font-weight: bold;">Booking Status:</td>
-              <td style="padding: 10px; border-bottom: 1px solid #eee; color: ${status === 'CONFIRMED' ? '#4CAF50' : '#f44336'}; font-weight: bold;">${status || 'N/A'}</td>
-            </tr>
-            <tr>
-              <td style="padding: 10px; border-bottom: 1px solid #eee; font-weight: bold;">Confirmation Number:</td>
-              <td style="padding: 10px; border-bottom: 1px solid #eee;">${confirmationNumber || 'N/A'}</td>
-            </tr>
-            <tr>
-              <td style="padding: 10px; border-bottom: 1px solid #eee; font-weight: bold;">Client Reference:</td>
-              <td style="padding: 10px; border-bottom: 1px solid #eee;">${clientReference || 'N/A'}</td>
-            </tr>
-            <tr>
-              <td style="padding: 10px; border-bottom: 1px solid #eee; font-weight: bold;">Phone:</td>
-              <td style="padding: 10px; border-bottom: 1px solid #eee;">${phone || 'N/A'}</td>
-            </tr>
-            <tr>
-              <td style="padding: 10px; border-bottom: 1px solid #eee; font-weight: bold;">Invoice ID:</td>
-              <td style="padding: 10px; border-bottom: 1px solid #eee;">${invoiceId || 'N/A'}</td>
-            </tr>
-            <tr>
-              <td style="padding: 10px; font-weight: bold;">Total Amount:</td>
-              <td style="padding: 10px; font-weight: bold; color: #4CAF50;">SAR ${totalAmount ? Number(totalAmount).toFixed(2) : '0.00'}</td>
-            </tr>
-          </table>
-        </div>
-        <div style="background-color: #f8f9fa; padding: 20px; text-align: center; font-size: 12px; color: #777;">
-          <p>If you have any questions, feel free to contact our support.</p>
-          <p>&copy; ${new Date().getFullYear()} Tayyran App. All rights reserved.</p>
-        </div>
-      </div>
-    `;
+    if (paymentId) {
+      bookingQuery.push({ paymentId });
+    }
 
-    await sendEmail({
-      email: email,
-      subject: `Hotel Booking Confirmation - ${confirmationNumber || invoiceId || 'Tayyran'}`,
-      message: htmlMessage
+    // Find booking using either invoiceId or paymentId
+    const bookingData = await FinalBooking.findOne({
+      $or: bookingQuery,
     });
 
-    return res.status(200).json({ message: "Booking confirmation email sent successfully" });
+    if (!bookingData) {
+      return res.status(404).json({
+        error: "Booking not found",
+      });
+    }
+
+    const order = bookingData;
+
+    const hotelData = order?.bookingPayload?.hotelData;
+
+    const email = hotelData?.EmailId;
+
+    if (!email) {
+      return res.status(400).json({
+        error: "Email is missing in bookingData",
+      });
+    }
+
+    const confirmationNumber =
+      order?.orderData?.data?.ConfirmationNumber;
+
+    const htmlMessage = buildHotelBookingEmail(order);
+
+    await sendEmail({
+      email,
+      subject: `Hotel Booking Confirmation - ${confirmationNumber ||
+        invoiceId ||
+        paymentId ||
+        "Tayyran"
+        }`,
+      message: htmlMessage,
+    });
+
+    return res.status(200).json({
+      message: "Booking confirmation email sent successfully",
+    });
   } catch (error) {
     console.error("Error sending hotel booking email:", error);
-    return res.status(500).json({ error: "Failed to send booking confirmation email" });
+
+    return res.status(500).json({
+      error: "Failed to send booking confirmation email",
+    });
   }
 };
+
+
+
+
+
+
+
+
+// {
+//   _id: ObjectId('6a8481979ff70316f643dfd1'),
+//   invoiceId: '87167841',
+//   paymentId: '0808871678418473716284',
+//   status: 'CONFIRMED',
+//   InvoiceValue: Double('181.85'),
+//   bookingType: 'hotel',
+//   bookingPayload: {
+//     hotelData: {
+//       BookingCode: '6145876!TB!10!TB!65e707df-9b1d-11f1-a76b-b22936a390aa!TB!N!TB!AFF!',
+//       CustomerDetails: [
+//         {
+//           RoomIndex: NumberInt('0'),
+//           CustomerNames: [
+//             {
+//               Title: 'Mr',
+//               FirstName: 'Hesham',
+//               LastName: 'Ashour',
+//               Type: 'Adult'
+//             },
+//             {
+//               Title: 'Mr',
+//               FirstName: 'Ashour',
+//               LastName: 'hesham',
+//               Type: 'Adult'
+//             }
+//           ]
+//         }
+//       ],
+//       ClientReferenceId: 'BOOK-2026081882',
+//       BookingReferenceId: 'TBO-BOOK-2026081882',
+//       TotalFare: Double('135.66'),
+//       EmailId: 'heshamconsultant0@gmail.com',
+//       PhoneNumber: '++966533322921',
+//       BookingType: 'Voucher',
+//       PaymentMode: 'Limit'
+//     },
+//     bookingType: 'hotel'
+//   },
+//   createdAt: ISODate('2026-08-18T16:00:23.634Z'),
+//   __v: NumberInt('0'),
+//   user: ObjectId('6a79e9eb11f9b77270ed3d16')
+// }

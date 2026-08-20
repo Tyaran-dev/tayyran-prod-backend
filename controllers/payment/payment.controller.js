@@ -466,6 +466,7 @@ export const PaymentWebhook = async (req, res) => {
 
           console.log(response.data?.data.Status?.Code, "Hotel reponse Status 5555")
 
+
           if (response.data?.data.Status?.Code === 200) {
             await FinalBooking.create({
               invoiceId: InvoiceId,
@@ -475,7 +476,7 @@ export const PaymentWebhook = async (req, res) => {
               bookingType,
               bookingPayload: rawBooking,
               user: userId,
-              orderData: response.data.order,
+              orderData: response.data.data || null,
             });
 
             await axios.post(`${process.env.BASE_URL}/payment/captureAmount`, {
