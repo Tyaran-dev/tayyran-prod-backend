@@ -751,7 +751,7 @@ export const saveDataToDb = async (req, res, next) => {
         BookingReferenceId: `TBO-BOOK-${dateStr}${randomNum}`,
         BookingType: "Voucher",
         PaymentMode: "Limit",
-
+        hotelDetails: rawHotel.hotelDetails
       };
 
     }
