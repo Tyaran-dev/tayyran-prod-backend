@@ -18,8 +18,8 @@ export const generateTokenAndSetCookie = (user, res) => {
     // set the refresh token in cookies for web
     res.cookie("jwt", refreshToken, {
         httpOnly: true, //accessible only by web server
-        secure: true, //https
-        sameSite: 'None', //cross-site cookie
+        secure: process.env.NODE_ENV === "production",
+        sameSite: process.env.NODE_ENV === "production" ? "None" : "Lax",
         maxAge: 7 * 24 * 60 * 60 * 1000,
     })
     return { accessToken, refreshToken };

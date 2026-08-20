@@ -77,6 +77,8 @@ export const search = async (req, res, next) => {
       `
     );
 
+    console.log(hotels, "test here now")
+
     // add type to cities
     const citiesWithType = cities.map(city => ({
       ...city,
@@ -771,7 +773,7 @@ export const getHotelDetails = async (req, res, next) => {
 
     const hotelDetails = await axios.post(
       `${baseURL}/HotelDetails`,
-      { HotelCodes, Language },
+      { HotelCodes},
       {
         auth: {
           username: userName,
@@ -779,15 +781,18 @@ export const getHotelDetails = async (req, res, next) => {
         },
       }
     );
+    console.log(Language, "Language 1");
+    console.log(baseURL, "baseURL 1");
+    console.log(HotelCodes, "HotelCodes 1");
 
-    const hotel = hotelDetails.data.HotelDetails;
+    const hotel = hotelDetails?.data;
 
+    console.log(hotel, "getRooms 55");
 
     const getRooms = await axios.post(`${baseURL}/Search`, hotelSearchPayload, {
       auth: { username: userName, password },
     });
 
-    console.log(getRooms.data, "getRooms");
 
     let availableRooms = [];
     if (getRooms.data?.HotelResult?.[0]?.Rooms) {
@@ -814,6 +819,7 @@ export const getHotelDetails = async (req, res, next) => {
       new ApiError(
         error.response?.status || 500,
         error.response?.data?.errors?.[0]?.detail ||
+        error.message ||
         "Error searching for Hotel Details "
       )
     );
