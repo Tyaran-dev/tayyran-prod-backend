@@ -192,7 +192,7 @@ export const refreshToken = async (req, res, next) => {
                         },
                     },
                     process.env.JWT_Access_Token,
-                    { expiresIn: "10m" } // recommended
+                    { expiresIn: "30m" } // recommended
                 );
 
                 // 7️⃣ Return access token (same for Web + Mobile)

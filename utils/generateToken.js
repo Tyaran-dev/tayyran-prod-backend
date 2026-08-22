@@ -6,21 +6,25 @@ export const generateTokenAndSetCookie = (user, res) => {
             id: user._id,
             tokenVersion: user.tokenVersion
         },
-    }, process.env.JWT_Access_Token, { expiresIn: "5m", });
+    }, process.env.JWT_Access_Token, { expiresIn: "30m", });
 
     const refreshToken = jwt.sign({
         UserInfo: {
             id: user._id,
             tokenVersion: user.tokenVersion
         },
-    }, process.env.JWT_Refresh_Token, { expiresIn: "15d", });
+    }, process.env.JWT_Refresh_Token, { expiresIn: "30d", });
+
+    const isProduction =
+        process.env.NODE_ENV === "production" ||
+        process.env.FRONTEND_URL?.startsWith("https://");
 
     // set the refresh token in cookies for web
     res.cookie("jwt", refreshToken, {
         httpOnly: true, //accessible only by web server
-        secure: process.env.NODE_ENV === "production",
-        sameSite: process.env.NODE_ENV === "production" ? "None" : "Lax",
-        maxAge: 7 * 24 * 60 * 60 * 1000,
+        secure: isProduction,
+        sameSite: isProduction ? "None" : "Lax",
+        maxAge: 30 * 24 * 60 * 60 * 1000,
     })
     return { accessToken, refreshToken };
 }
