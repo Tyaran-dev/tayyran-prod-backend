@@ -37,23 +37,6 @@ export const getUser = async (req, res, next) => {
     }
 };
 
-export const getAllUsers = async (req, res, next) => {
-    try {
-        const requester = req.user;
-
-        // Only admin can get all users
-        if (requester.role !== "admin") {
-            return next(new ApiError(403, "Forbidden: Not allowed to access all users"));
-        };
-        const users = await User.find().select("-password").populate("bookings");
-
-        res.status(200).json(users);
-    } catch (error) {
-        return next(new ApiError(500, error.message));
-
-    }
-}
-
 export const updateUser = async (req, res, next) => {
     try {
         const userId = req.user._id;
@@ -141,29 +124,3 @@ export const updateUser = async (req, res, next) => {
     }
 };
 
-export const deleteUser = async (req, res, next) => {
-    try {
-        const { id } = req.body;
-
-        if (!id) {
-            return next(new ApiError(400, "User ID is required"));
-        }
-
-        const requester = req.user;
-        // 1️⃣ If not admin, user must be deleting HIS OWN account
-        if (requester.role !== "admin" && requester._id.toString() !== id) {
-            return next(new ApiError(403, "Forbidden: Not allowed to delete this user"));
-        }
-
-        // 2️⃣ Delete user
-        const deletedUser = await User.findByIdAndDelete(id);
-        if (!deletedUser) {
-            return next(new ApiError(404, "User not found"));
-        }
-
-        res.status(200).json({ message: "User deleted successfully" });
-
-    } catch (error) {
-        return next(new ApiError(500, error.message));
-    }
-}

@@ -610,8 +610,29 @@ export const GetBookingStatus = async (req, res) => {
     const transactions = data?.Data?.InvoiceTransactions || [];
 
     if (!resolvedInvoiceId) {
-      return res.json({ status: "PENDING" });
+      return res.json({
+        status: "PENDING",
+        booking: {
+          invoice_id: invoiceId || null,
+          status: "pending",
+          total: Number(data?.Data?.InvoiceValue || 0),
+          currency: "SAR",
+        },
+      });
     }
+
+    const temporaryBooking = await TempBookingTicket.findOne({
+      invoiceId: resolvedInvoiceId,
+    }).lean();
+    const bookingType = temporaryBooking?.bookingType;
+    const paymentBooking = {
+      booking_id: resolvedInvoiceId,
+      invoice_id: resolvedInvoiceId,
+      status: "pending",
+      booking_type: bookingType,
+      total: Number(data?.Data?.InvoiceValue || 0),
+      currency: "SAR",
+    };
 
     // 🔹 Check if already saved in DB
     const booking = await FinalBooking.findOne({
@@ -620,6 +641,14 @@ export const GetBookingStatus = async (req, res) => {
     if (booking) {
       return res.json({
         status: booking.status,
+        booking: {
+          booking_id: booking.invoiceId,
+          invoice_id: booking.invoiceId,
+          status: booking.status.toLowerCase(),
+          booking_type: booking.bookingType,
+          total: booking.InvoiceValue,
+          currency: "SAR",
+        },
         order: booking || null,
       });
     }
@@ -633,12 +662,18 @@ export const GetBookingStatus = async (req, res) => {
       statuses.includes("Canceled") ||
       statuses.includes("Expired")
     ) {
-      return res.json({ status: "FAILED" });
+      return res.json({
+        status: "FAILED",
+        booking: { ...paymentBooking, status: "failed" },
+      });
     }
 
     // ✅ Priority 2: Success cases
     if (statuses.includes("Paid") || statuses.includes("Captured")) {
-      return res.json({ status: "CONFIRMED" });
+      return res.json({
+        status: "CONFIRMED",
+        booking: { ...paymentBooking, status: "confirmed" },
+      });
     }
 
     // ⏳ Priority 3: Authorized but not yet captured
@@ -647,7 +682,7 @@ export const GetBookingStatus = async (req, res) => {
     }
 
     // ⏳ Default fallback → still pending
-    return res.json({ status: "PENDING" });
+    return res.json({ status: "PENDING", booking: paymentBooking });
   } catch (err) {
     console.error(
       "GetBookingStatus error:",

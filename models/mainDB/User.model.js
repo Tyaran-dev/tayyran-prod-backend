@@ -49,6 +49,15 @@ const userSchema = new Schema(
         emailVerificationCode: String,
         emailVerificationExpiry: Date,
 
+        adminOtpHash: String,
+        adminOtpExpires: Date,
+        adminOtpLastRequestedAt: Date,
+        adminOtpRequestWindowStart: Date,
+        adminOtpRequestCount: {
+            type: Number,
+            default: 0,
+        },
+
         profileImg: String,
 
         personalInfo: {

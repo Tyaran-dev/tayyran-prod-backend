@@ -137,10 +137,20 @@ export const logout = async (req, res, next) => {
         { new: true }
     );
 
+    const isProduction =
+        process.env.NODE_ENV === "production" ||
+        process.env.FRONTEND_URL?.startsWith("https://");
+
     res.clearCookie("jwt", {
         httpOnly: true,
-        secure: true,
-        sameSite: "None"
+        secure: isProduction,
+        sameSite: isProduction ? "None" : "Lax"
+    });
+
+    res.clearCookie("admin_otp_session", {
+        httpOnly: true,
+        secure: isProduction,
+        sameSite: isProduction ? "None" : "Lax"
     });
 
     res.json({ message: "Logged out successfully" });

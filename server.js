@@ -5,6 +5,7 @@ import bodyParser from "body-parser";
 
 import authRoute from "./routes/auth/auth.route.js";
 import usersRoute from "./routes/users/users.route.js";
+import adminRoute from "./routes/admin/admin.route.js";
 import airportRoute from "./routes/flights/airport.route.js";
 import filghtsRoute from "./routes/flights/flights.route.js";
 import paymentRoute from "./routes/payment/payment.route.js";
@@ -52,6 +53,8 @@ app.use(express.json());
 // user routes
 app.use("/auth", authRoute);
 app.use("/users", usersRoute);
+app.use("/admin", adminRoute);
+
 
 app.use("/airports", airportRoute);
 app.use("/flights", filghtsRoute);
@@ -82,6 +85,6 @@ app.use((err, req, res, next) => {
 await connectAllDatabases();
 
 
-  app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
-  });
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+});
