@@ -109,11 +109,15 @@ export const verifyAdminOtp = async (req, res, next) => {
             return next(new ApiError(400, "Invalid OTP"));
         }
 
+        const isProduction =
+            process.env.NODE_ENV === "production" ||
+            process.env.FRONTEND_URL?.startsWith("https://");
+
         const adminOtpToken = signAdminOtpSession(user);
         res.cookie("admin_otp_session", adminOtpToken, {
             httpOnly: true,
-            sameSite: process.env.NODE_ENV === "production" ? "None" : "Lax",
-            secure: process.env.NODE_ENV === "production",
+            sameSite: isProduction ? "None" : "Lax",
+            secure: isProduction,
             maxAge: ADMIN_OTP_SESSION_TTL_MS,
         });
 
