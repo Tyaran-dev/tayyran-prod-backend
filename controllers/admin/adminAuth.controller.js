@@ -39,7 +39,7 @@ export const requestAdminOtp = async (req, res, next) => {
             return next(new ApiError(429, "Please wait a few seconds before requesting a new code"));
         }
 
-        const hourlyRequestWindowMs = 60 * 60 * 1000;
+        const hourlyRequestWindowMs = 1 * 60 * 1000;
         const requestCount = user.adminOtpRequestCount || 0;
         const requestWindowStart = user.adminOtpRequestWindowStart ? new Date(user.adminOtpRequestWindowStart).getTime() : null;
 
@@ -96,8 +96,12 @@ export const verifyAdminOtp = async (req, res, next) => {
             return next(new ApiError(404, "Admin not found"));
         }
 
-        if (!user.adminOtpHash || !user.adminOtpExpires || new Date(user.adminOtpExpires).getTime() < Date.now()) {
-            return next(new ApiError(400, "OTP is invalid or expired"));
+        if (!user.adminOtpHash || !user.adminOtpExpires) {
+            return next(new ApiError(400, "No OTP was requested. Please request a new code first."));
+        }
+
+        if (new Date(user.adminOtpExpires).getTime() < Date.now()) {
+            return next(new ApiError(400, "OTP has expired. Please request a new code."));
         }
 
         const hashedInput = hashOtp(otp);
