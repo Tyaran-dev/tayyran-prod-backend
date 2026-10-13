@@ -150,7 +150,16 @@ const userSchema = new Schema(
             type: Number,
             default: 1,
         },
+        isDeleted: {
+            type: Boolean,
+            default: false,
+            index: true,
+        },
 
+        deletedAt: {
+            type: Date,
+            default: null,
+        },
         pointsHistory: [
             {
                 miles: Number,

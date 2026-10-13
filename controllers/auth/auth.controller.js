@@ -111,9 +111,9 @@ export const login = async (req, res, next) => {
 
     const foundUser = await User.findOne({ email }).exec();
 
-    if (!foundUser) {
-        throw new ApiError(401, "User does not exist'");
-    };
+    if (!foundUser || foundUser.isDeleted) {
+        throw new ApiError(401, "Invalid credentials");
+    }
 
     const match = await bcrypt.compare(password, foundUser.password);
 
@@ -239,6 +239,118 @@ export const getMe = async (req, res, next) => {
         user,
     });
 };
+
+
+export const deleteMyAccount = async (req, res, next) => {
+    try {
+        if (!req.user?._id) {
+            throw new ApiError(401, "Not authorized");
+        }
+
+        const user = await User.findById(req.user._id);
+
+        if (!user) {
+            throw new ApiError(404, "User not found");
+        }
+
+        if (user.isDeleted) {
+            throw new ApiError(400, "Account already deleted");
+        }
+
+        // Generate a unique placeholder email.
+        // This allows the original email to be registered again.
+        const anonymizedEmail =
+            `deleted_${user._id}_${crypto.randomUUID()}@deleted.invalid`;
+
+        // Prevent login using the old password.
+        const randomPassword = crypto.randomBytes(32).toString("hex");
+        const unusablePasswordHash = await bcrypt.hash(randomPassword, 10);
+
+        // Anonymize the account while preserving its MongoDB _id.
+        user.first_name = "Deleted";
+        user.last_name = "User";
+        user.email = anonymizedEmail;
+        user.password = unusablePasswordHash;
+
+        user.isDeleted = true;
+        user.deletedAt = new Date();
+
+        // Invalidate existing tokens if your auth middleware
+        // validates tokenVersion.
+        user.tokenVersion = (user.tokenVersion || 1) + 1;
+
+        // Remove profile information.
+        user.profileImg = undefined;
+
+        user.emailVerified = false;
+        user.emailVerificationCode = undefined;
+        user.emailVerificationExpiry = undefined;
+
+        user.passwordChangedAt = new Date();
+        user.passwordResetCode = undefined;
+        user.passwordResetExpires = undefined;
+        user.passwordResetVerified = undefined;
+
+        user.adminOtpHash = undefined;
+        user.adminOtpExpires = undefined;
+        user.adminOtpLastRequestedAt = undefined;
+        user.adminOtpRequestWindowStart = undefined;
+        user.adminOtpRequestCount = 0;
+
+        // Remove personal information.
+        user.personalInfo = {
+            title: null,
+            middle_name: "",
+            dateOfBirth: {},
+            nationality: null,
+            passport: {
+                number: null,
+                issuingCountry: null,
+                expiryDate: {},
+            },
+            contact: {
+                phoneCode: null,
+                phoneNumber: null,
+                email: null,
+            },
+        };
+
+        // Remove any stored registration payment reference
+        // if it is no longer needed for legitimate records.
+        // Keep booking/payment records in their own collection.
+        user.registrationPaymentId = null;
+
+        await user.save();
+
+        // Clear the browser cookies, if present.
+        const isProduction =
+            process.env.NODE_ENV === "production" ||
+            process.env.FRONTEND_URL?.startsWith("https://");
+
+        res.clearCookie("jwt", {
+            httpOnly: true,
+            secure: isProduction,
+            sameSite: isProduction ? "None" : "Lax",
+        });
+
+        res.clearCookie("admin_otp_session", {
+            httpOnly: true,
+            secure: isProduction,
+            sameSite: isProduction ? "None" : "Lax",
+        });
+
+        return res.status(200).json({
+            status: "success",
+            message:
+                "Your account has been deleted and personal profile information anonymized.",
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+
+
 
 export const reSendVerificationCode = async (req, res, next) => {
     const { email } = req.body;
