@@ -1,6 +1,6 @@
 // models/FinalBooking.js
 import { Schema } from 'mongoose';
-import { mainConnection  } from "../../../db/connectMongoDB.js"; // Import your specific connection
+import { mainConnection } from "../../../db/connectMongoDB.js"; // Import your specific connection
 
 const FinalBookingSchema = new Schema({
   invoiceId: { type: String, required: true, unique: true },
@@ -9,6 +9,14 @@ const FinalBookingSchema = new Schema({
     type: String,
     enum: ["CONFIRMED", "FAILED"],
     required: true,
+  },
+  failedReason: {
+    type: String,
+    default: null,
+  },
+  failedMessage: {
+    type: String,
+    default: null,
   },
   InvoiceValue: { type: Number }, // store invoice total
   bookingType: { type: String }, // flight, hotel, etc.

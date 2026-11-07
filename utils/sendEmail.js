@@ -186,14 +186,6 @@ export const buildHotelBookingEmail = (order) => {
 
               </tr>
             </table>
-            ${dayRatesHtml
-        ? `
-            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:12px; border-top:1px solid #f1f5f9;">
-              <tr><td colspan="2" style="padding:12px 0 8px 0; font-size:11px; color:#94a3b8; text-transform:uppercase;">Daily Rates</td></tr>
-              ${dayRatesHtml}
-            </table>
-            `
-        : ""
       }
           </td>
         </tr>

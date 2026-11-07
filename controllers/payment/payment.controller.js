@@ -257,6 +257,11 @@ export const PaymentWebhook = async (req, res) => {
     const PaymentId = Data.Transaction.PaymentId;
     const InvoiceValue = Number(Data.Amount?.ValueInPayCurrency);
 
+    if (!InvoiceId) {
+      return res.status(400).json({ error: "Missing InvoiceId" });
+    }
+
+
     const existing = await FinalBooking.findOne({ invoiceId: InvoiceId });
     if (existing) {
       console.log(`⚠️ Skipping duplicate invoice ${Data.Invoice.Id}`);
@@ -265,9 +270,94 @@ export const PaymentWebhook = async (req, res) => {
 
     console.log(InvoiceValue, "55555");
 
-    if (!InvoiceId) {
-      return res.status(400).json({ error: "Missing InvoiceId" });
+    if (TransactionStatus === "FAILED") {
+      console.log("❌ Payment failed for invoice:", InvoiceId);
+      // Optionally update FinalBooking status here for failed payments
+      try {
+        // 1. Find the temporary booking
+        const tempBooking = await TempBookingTicket.findOne({
+          invoiceId: InvoiceId,
+          status: { $in: ["pending", "authorized"] },
+        });
+
+        if (!tempBooking) {
+          console.log(
+            "⚠️ No temporary booking found for failed payment:",
+            InvoiceId
+          );
+
+          return res.status(200).json({
+            message: "No temporary booking found",
+          });
+        }
+
+        const rawBooking = tempBooking.bookingData;
+        const bookingType = rawBooking?.bookingType || "unknown";
+
+        // 2. Extract the payment failure message
+        const rawPaymentError =
+          Data.Transaction?.ErrorMessage ||
+          Data.Transaction?.Error ||
+          Data.Transaction.Error.Message ||
+          Data.Transaction?.FailureReason ||
+          Data.Invoice?.ErrorMessage ||
+          Data.Invoice?.Error ||
+          "MyFatoorah reported payment failure";
+
+        const paymentError =
+          typeof rawPaymentError === "string"
+            ? rawPaymentError
+            : JSON.stringify(rawPaymentError);
+
+        // 3. Save failed booking
+        await FinalBooking.create({
+          invoiceId: InvoiceId,
+          paymentId: PaymentId,
+          status: "FAILED",
+
+          failedReason: "Payment Failed",
+          failedMessage: paymentError,
+
+          InvoiceValue,
+          bookingType,
+          user: tempBooking.user || null,
+          bookingPayload: rawBooking,
+          orderData: null,
+        });
+
+        console.log(
+          "✅ Failed payment booking saved:",
+          InvoiceId
+        );
+
+        // 4. Delete temporary booking after successful save
+        await TempBookingTicket.deleteOne({
+          _id: tempBooking._id,
+        });
+
+        console.log(
+          "🗑️ Temporary booking deleted:",
+          InvoiceId
+        );
+
+        return res.status(200).json({
+          message: "Payment failure processed successfully",
+        });
+
+      } catch (error) {
+        console.error(
+          "❌ Failed payment processing:",
+          InvoiceId,
+          error?.response?.data || error.message
+        );
+
+        return res.status(500).json({
+          error: "Failed to process payment failure",
+        });
+      }
     }
+
+
 
     if (
       TransactionStatus === "AUTHORIZE" ||
@@ -421,6 +511,8 @@ export const PaymentWebhook = async (req, res) => {
             await FinalBooking.create({
               invoiceId: InvoiceId,
               status: "FAILED",
+              failedReason: "Amadeus Create Booking Failed",
+              failedMessage: response.data?.message || "Unknown error",
               InvoiceValue,
               bookingType,
               user: userId,
@@ -493,6 +585,9 @@ export const PaymentWebhook = async (req, res) => {
               invoiceId: InvoiceId,
               paymentId: PaymentId,
               status: "FAILED",
+              failedReason: "Hotel Create Booking Failed",
+              failedMessage:
+                response.data?.data?.Status?.Description || "Unknown error",
               InvoiceValue,
               bookingType,
               bookingPayload: rawBooking,
@@ -520,6 +615,8 @@ export const PaymentWebhook = async (req, res) => {
           invoiceId: InvoiceId,
           paymentId: PaymentId,
           status: "FAILED",
+          failedReason: "Create Booking Failed",
+          failedMessage: err?.response?.data || err.message || "Unknown error",
           InvoiceValue,
           orderData: null,
           bookingType,
@@ -536,10 +633,6 @@ export const PaymentWebhook = async (req, res) => {
       await TempBookingTicket.deleteOne({ invoiceId: InvoiceId });
     }
 
-    if (TransactionStatus === "FAILED") {
-      console.log("❌ Payment failed for invoice:", InvoiceId);
-      // Optionally update FinalBooking status here for failed payments
-    }
 
     return res.status(200).json({ message: "Webhook processed" });
   } catch (err) {
