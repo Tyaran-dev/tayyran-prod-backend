@@ -222,6 +222,7 @@ export const getMe = async (req, res, next) => {
     }
 
     const user = await User.findById(req.user._id)
+        .select("-password -emailVerificationCode -emailVerificationExpiry -passwordResetCode -passwordResetExpires -passwordResetVerified")
         .populate({
             path: "bookings",
             options: {
@@ -348,8 +349,6 @@ export const deleteMyAccount = async (req, res, next) => {
         next(error);
     }
 };
-
-
 
 
 export const reSendVerificationCode = async (req, res, next) => {

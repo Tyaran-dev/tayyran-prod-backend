@@ -78,14 +78,21 @@ export const forgotPassword = async (req, res, next) => {
 
 export const verifyResetCode = async (req, res, next) => {
 
-    const resetCode = req.body.resetCode;
-    if (!resetCode) {
-        return next(new ApiError(400, "Reset code is required"));
+    const {resetCode, email} = req.body;
+    if (
+        typeof resetCode !== "string" ||
+        !resetCode ||
+        typeof email !== "string" ||
+        !email.trim()
+    ) {
+        return next(new ApiError(400, "Reset code and email are required"));
     }
 
-    const hashedResetCode = crypto.createHash("sha256").update(resetCode).digest("hex");;
+    const normalizedEmail = email.trim().toLowerCase();
+    const hashedResetCode = crypto.createHash("sha256").update(resetCode).digest("hex");
 
     const user = await User.findOne({
+        email: normalizedEmail,
         passwordResetCode: hashedResetCode,
         passwordResetExpires: { $gt: Date.now() }
     }).exec();

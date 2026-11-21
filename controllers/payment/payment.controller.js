@@ -296,9 +296,9 @@ export const PaymentWebhook = async (req, res) => {
 
         // 2. Extract the payment failure message
         const rawPaymentError =
+          Data.Transaction.Error.Message ||
           Data.Transaction?.ErrorMessage ||
           Data.Transaction?.Error ||
-          Data.Transaction.Error.Message ||
           Data.Transaction?.FailureReason ||
           Data.Invoice?.ErrorMessage ||
           Data.Invoice?.Error ||

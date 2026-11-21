@@ -14,6 +14,7 @@ import versionRoute from "./routes/version.route.js";
 import { connectAllDatabases } from './db/connectMongoDB.js';
 import { ApiError } from "./utils/apiError.js";
 import cookieParser from "cookie-parser";
+import { ensureRateLimitIndexes } from "./middlewares/resetCodeRateLimit.js";
 
 
 const app = express();
@@ -83,6 +84,7 @@ app.use((err, req, res, next) => {
 
 // Connect to databases
 await connectAllDatabases();
+await ensureRateLimitIndexes();
 
 
 app.listen(PORT, () => {
